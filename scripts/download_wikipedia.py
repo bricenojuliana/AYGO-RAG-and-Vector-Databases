@@ -9,6 +9,7 @@ Usage:
     python scripts/download_wikipedia.py
 """
 
+import re
 from pathlib import Path
 
 import requests
@@ -44,6 +45,52 @@ def fetch_article(title: str) -> tuple[str, str]:
     return page["title"], page["extract"]
 
 
+DISPLAYSTYLE = re.compile(r"\s*\{\\displaystyle (.*)\}\s*")
+# A formula rendered by `explaintext` is a run of lines that are empty or indented
+# by 2+ spaces (one MathML symbol per line), ending in its LaTeX source.
+FORMULA_LINE = re.compile(r"(?: {2,}.*| *)")
+
+
+def clean_math(text: str) -> str:
+    """Replace each formula's one-symbol-per-line MathML dump with its LaTeX source.
+
+    Inline formulas become `$latex$` inside their sentence; formulas that stand
+    on their own line become `$$latex$$` on that line.
+    """
+    lines = text.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        if not FORMULA_LINE.fullmatch(lines[i]):
+            out.append(lines[i])
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and FORMULA_LINE.fullmatch(lines[j]):
+            j += 1
+        run = lines[i:j]
+        latex = [m.group(1) for line in run if (m := DISPLAYSTYLE.fullmatch(line))]
+        if not latex:  # ordinary blank lines between paragraphs
+            out.extend(run)
+            i = j
+            continue
+        # Empty lines at the edges of the run are paragraph breaks, not part of the formula.
+        lead = next(k for k, line in enumerate(run) if line)
+        trail = len(run) - next(k for k, line in enumerate(reversed(run)) if line)
+        out.extend(run[:lead])
+        inline = lead == 0 and trail == len(run) and out and out[-1].strip() and j < len(lines)
+        if inline:
+            following = lines[j]
+            glue = "" if following[:1] in ".,;:)" else " "
+            out[-1] = f"{out[-1].rstrip()} {' '.join(f'${x}$' for x in latex)}{glue}{following.lstrip()}"
+            i = j + 1
+        else:
+            out.extend(f"$${x}$$" for x in latex)
+            out.extend(run[trail:])
+            i = j
+    return "\n".join(out)
+
+
 def slugify(title: str) -> str:
     keep = [c.lower() if c.isalnum() else "_" for c in title]
     return "_".join(filter(None, "".join(keep).split("_")))
@@ -53,6 +100,7 @@ def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     for title in ARTICLES:
         canonical, text = fetch_article(title)
+        text = clean_math(text)
         url = f"https://en.wikipedia.org/wiki/{canonical.replace(' ', '_')}"
         path = OUTPUT_DIR / f"{slugify(canonical)}.txt"
         # The first two lines carry the title and the source URL; the notebook
