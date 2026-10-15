@@ -28,7 +28,7 @@ flowchart LR
         E2 -- query vector --> VS
         VS -- top-4 chunks --> P[ChatPromptTemplate<br/>numbered context + question]
         Q --> P
-        P --> LLM[ChatOpenAI<br/>gpt-4.1-mini, temperature 0]
+        P --> LLM[ChatOpenAI<br/>gpt-6-luna]
         LLM --> A[Answer citing 1, 2 ... + sources]
     end
 ```
@@ -62,7 +62,7 @@ flowchart LR
     NB <-- embeddings --> OAI[OpenAI API]
 ```
 
-Pinecone stores and searches the vectors; OpenAI still computes them on the client side. LangChain's `PineconeVectorStore` saves each chunk's text and metadata (title, URL, position) with its vector, so search results come back as normal LangChain `Document`s. Each chunk gets a deterministic ID (a hash of its URL and its position in the article), so re-running the upload overwrites the vectors instead of duplicating them. The same IDs are used in both parts, which lets the notebook check whether both stores return the same chunks.
+Pinecone stores and searches the vectors; OpenAI still computes them on the client side. LangChain's `PineconeVectorStore` saves each chunk's text and metadata (title, URL, position) with its vector, so search results come back as normal LangChain `Document`s. Each chunk gets a deterministic ID (a hash of its URL and its position in the article), so re-running the upload overwrites the vectors instead of duplicating them. After uploading, the notebook deletes any vector whose ID is no longer in the knowledge base, so the index stays in sync when the articles change. The same IDs are used in both parts, which lets the notebook check whether both stores return the same chunks.
 
 Compared with the in-memory store, Pinecone keeps the vectors after the program stops. The notebook shows this by reconnecting to the index without embedding anything. Pinecone can also be shared by any process, filters by metadata inside the database, and uses approximate nearest-neighbour indexes that stay fast as the corpus grows.
 
@@ -72,12 +72,12 @@ From the run saved in the notebook. Timings vary slightly between runs.
 
 | | InMemoryVectorStore | Pinecone |
 |---|---|---|
-| Indexing 308 chunks (incl. embeddings) | ~1.5 s | ~3.5 s |
-| Median search latency (vector store only) | ~10 ms | ~107 ms |
+| Indexing 215 chunks (incl. embeddings) | ~1.1 s | ~2.7 s |
+| Median search latency (vector store only) | ~10 ms | ~110 ms |
 | Same top-4 chunks as in-memory | — | 6 / 6 questions, same order |
 | Survives a restart / shared between processes | no / no | yes / yes |
 
-Both stores return the same chunks, and the answers are the same. The in-memory search is faster because it runs inside the process, while each Pinecone search is a network round trip to AWS. That gap is small next to the 1–3 s the chat model takes to answer. Pinecone's advantages are persistence, sharing, filtering and scale, not latency on a corpus this small. Section 4 of the notebook has the full comparison and discussion.
+Both stores return the same chunks, so the prompts are identical and the answers differ only in wording (the reasoning model samples at its default temperature). The in-memory search is faster because it runs inside the process, while each Pinecone search is a network round trip to AWS. That gap is small next to the 1–3 s the chat model takes to answer. Pinecone's advantages are persistence, sharing, filtering and scale, not latency on a corpus this small. Section 4 of the notebook has the full comparison and discussion.
 
 ## Repository structure
 
@@ -125,7 +125,7 @@ OPENAI_API_KEY=sk-...
 PINECONE_API_KEY=pcsk_...
 ```
 
-`.env` is listed in `.gitignore`, so the keys are never committed. Two optional variables are also read: `OPENAI_CHAT_MODEL`, which defaults to `gpt-4.1-mini`, and `PINECONE_INDEX_NAME`, which defaults to `aygo-rag-wikipedia`.
+`.env` is listed in `.gitignore`, so the keys are never committed. Two optional variables are also read: `OPENAI_CHAT_MODEL`, which defaults to `gpt-6-luna`, and `PINECONE_INDEX_NAME`, which defaults to `aygo-rag-wikipedia`.
 
 ### 3. Run the notebook
 
@@ -143,7 +143,7 @@ The first run creates the Pinecone index `aygo-rag-wikipedia`, which takes a few
 
 ### Optional: refresh the knowledge base
 
-The articles are already in `data/wikipedia/`, so the notebook does not need internet access to Wikipedia. To download the current versions:
+The articles are already in `data/wikipedia/`, so the notebook does not need internet access to Wikipedia. The script downloads each article's plain text and replaces every math formula, which the Wikipedia API exports as one symbol per line, with its LaTeX source (`$...$` inline, `$$...$$` on its own line). To download the current versions:
 
 ```bash
 python scripts/download_wikipedia.py
