@@ -11,27 +11,9 @@ The knowledge base is six English Wikipedia articles on the topic of the lab its
 
 A RAG system has two pipelines. Indexing runs once and turns the documents into searchable vectors. Querying runs for every question.
 
-```mermaid
-flowchart LR
-    subgraph Indexing["Indexing (once)"]
-        TXT[data/wikipedia/*.txt] --> L[Loader<br/>txt → Document + metadata]
-        L --> S[RecursiveCharacterTextSplitter<br/>1000 chars, 200 overlap]
-        S --> E1[OpenAIEmbeddings<br/>text-embedding-3-small · 1536-d]
-    end
-    E1 --> VS
-    subgraph VS["Vector store"]
-        MEM[(Part 1<br/>InMemoryVectorStore)]
-        PC[(Part 2<br/>Pinecone index<br/>cosine · serverless)]
-    end
-    subgraph Querying["Querying (per question)"]
-        Q[Question] --> E2[OpenAIEmbeddings]
-        E2 -- query vector --> VS
-        VS -- top-4 chunks --> P[ChatPromptTemplate<br/>numbered context + question]
-        Q --> P
-        P --> LLM[ChatOpenAI<br/>gpt-6-luna]
-        LLM --> A[Answer citing 1, 2 ... + sources]
-    end
-```
+<p align="center">
+  <img src="docs/diagrams/rag-architecture.svg" alt="RAG architecture: indexing, retrieval and generation pipelines sharing one vector store" width="560">
+</p>
 
 Each article is split into chunks of about 1000 characters, with 200 characters of overlap so that a sentence cut at a boundary still appears whole in one of the two chunks. Each chunk is converted into a 1536-dimensional vector by OpenAI's embedding model. Texts with similar meaning produce vectors that point in similar directions, even when they share no words.
 
@@ -51,16 +33,9 @@ The notebook also includes the variant used by the LangChain RAG tutorial refere
 
 ### Role of Pinecone
 
-```mermaid
-flowchart LR
-    NB[Notebook / any client<br/>with the API key] -- "upsert(id, vector, metadata)" --> IDX
-    NB -- "query(vector, top_k=4, filter)" --> IDX
-    subgraph Pinecone["Pinecone · AWS us-east-1"]
-        IDX[(index aygo-rag-wikipedia<br/>dim 1536 · cosine<br/>namespace wikipedia)]
-    end
-    IDX -- "ids + scores + metadata" --> NB
-    NB <-- embeddings --> OAI[OpenAI API]
-```
+<p align="center">
+  <img src="docs/diagrams/pinecone-integration.svg" alt="The client talks to OpenAI for embeddings and to the Pinecone index through LangChain's PineconeVectorStore" width="100%">
+</p>
 
 Pinecone stores and searches the vectors; OpenAI still computes them on the client side. LangChain's `PineconeVectorStore` saves each chunk's text and metadata (title, URL, position) with its vector, so search results come back as normal LangChain `Document`s. Each chunk gets a deterministic ID (a hash of its URL and its position in the article), so re-running the upload overwrites the vectors instead of duplicating them. After uploading, the notebook deletes any vector whose ID is no longer in the knowledge base, so the index stays in sync when the articles change. The same IDs are used in both parts, which lets the notebook check whether both stores return the same chunks.
 
@@ -86,6 +61,7 @@ Both stores return the same chunks, so the prompts are identical and the answers
 ├── rag_langchain_pinecone.ipynb   # the workshop: architecture, Part 1, Part 2, comparison
 ├── data/wikipedia/                # sample knowledge base (6 Wikipedia articles as .txt)
 ├── scripts/download_wikipedia.py  # regenerates data/wikipedia/ from the Wikipedia API
+├── docs/diagrams/                 # architecture diagrams: D2 sources (.d2) and rendered .svg
 ├── requirements.txt
 ├── .env.example                   # template for the API keys
 └── README.md
@@ -150,6 +126,15 @@ python scripts/download_wikipedia.py
 ```
 
 To use other articles, edit the `ARTICLES` list in that script.
+
+### Optional: edit the diagrams
+
+The diagrams are written in [D2](https://d2lang.com/). After editing a `.d2` file, re-render it:
+
+```bash
+d2 docs/diagrams/rag-architecture.d2 docs/diagrams/rag-architecture.svg
+d2 docs/diagrams/pinecone-integration.d2 docs/diagrams/pinecone-integration.svg
+```
 
 ## Technologies
 

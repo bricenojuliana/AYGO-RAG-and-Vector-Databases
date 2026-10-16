@@ -1,0 +1,70 @@
+# RAG architecture: indexing (once), then retrieval + generation for every question.
+# Render: d2 rag-architecture.d2 rag-architecture.svg
+vars: {
+  d2-config: {
+    layout-engine: elk
+    pad: 30
+  }
+}
+direction: down
+
+classes: {
+  group: {
+    style: {fill: "#f7f8fa"; stroke: "#d0d5dd"; border-radius: 12; font-size: 18; bold: true; font-color: "#344054"}
+  }
+  step: {
+    style: {fill: "#ffffff"; stroke: "#98a2b3"; border-radius: 8; font-size: 15; font-color: "#1d2939"}
+  }
+  openai: {
+    style: {fill: "#e6f4ef"; stroke: "#10a37f"; stroke-width: 2; border-radius: 8; font-size: 15; font-color: "#05603a"}
+  }
+  store: {
+    shape: cylinder
+    style: {fill: "#eef0ff"; stroke: "#4f46e5"; stroke-width: 2; font-size: 15; font-color: "#312e81"}
+  }
+  io: {
+    style: {fill: "#fff7e6"; stroke: "#f79009"; stroke-width: 2; border-radius: 20; font-size: 15; font-color: "#7a2e0e"}
+  }
+  flow: {
+    style: {stroke: "#667085"; stroke-width: 2; font-size: 13; font-color: "#475467"}
+  }
+}
+
+indexing: "① Indexing · runs once" {
+  class: group
+  docs: "6 Wikipedia articles\ndata/wikipedia/*.txt" {class: io; shape: page}
+  loader: "Loader\ntxt → Document + metadata" {class: step}
+  splitter: "Text splitter\n1000 chars · 200 overlap" {class: step}
+  embed: "OpenAI embeddings\ntext-embedding-3-small" {class: openai}
+
+  docs -> loader: {class: flow}
+  loader -> splitter: {class: flow}
+  splitter -> embed: "215 chunks" {class: flow}
+}
+
+retrieval: "② Retrieval · every question" {
+  class: group
+  question: "Question" {class: io}
+  embed: "OpenAI embeddings\ntext-embedding-3-small" {class: openai}
+  question -> embed: {class: flow}
+}
+
+stores: "Vector store · 1536-d · cosine" {
+  class: group
+  memory: "Part 1\nInMemoryVectorStore\n(process RAM)" {class: store}
+  pinecone: "Part 2\nPinecone serverless index\n(AWS us-east-1)" {class: store}
+}
+
+generation: "③ Generation" {
+  class: group
+  prompt: "Prompt template\ncontext [1]…[4] + question" {class: step}
+  llm: "ChatOpenAI\ngpt-6-luna" {class: openai}
+  answer: "Answer citing [n]\n+ source URLs" {class: io}
+  prompt -> llm: {class: flow}
+  llm -> answer: {class: flow}
+}
+
+indexing.embed -> stores: "vectors + text + metadata" {class: flow}
+retrieval.embed -> stores: "query vector" {class: flow}
+stores -> generation.prompt: "top-4 chunks" {class: flow}
+retrieval.question -> generation.prompt: "question" {class: flow; style.stroke-dash: 4}

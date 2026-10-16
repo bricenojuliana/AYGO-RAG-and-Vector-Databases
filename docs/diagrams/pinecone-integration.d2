@@ -1,0 +1,56 @@
+# How the notebook talks to Pinecone through LangChain's PineconeVectorStore.
+# Render: d2 pinecone-integration.d2 pinecone-integration.svg
+vars: {
+  d2-config: {
+    layout-engine: elk
+    pad: 30
+  }
+}
+direction: right
+
+classes: {
+  group: {
+    style: {fill: "#f7f8fa"; stroke: "#d0d5dd"; border-radius: 12; font-size: 18; bold: true; font-color: "#344054"}
+  }
+  step: {
+    style: {fill: "#ffffff"; stroke: "#98a2b3"; border-radius: 8; font-size: 15; font-color: "#1d2939"}
+  }
+  openai: {
+    style: {fill: "#e6f4ef"; stroke: "#10a37f"; stroke-width: 2; border-radius: 8; font-size: 15; font-color: "#05603a"}
+  }
+  store: {
+    shape: cylinder
+    style: {fill: "#eef0ff"; stroke: "#4f46e5"; stroke-width: 2; font-size: 15; font-color: "#312e81"}
+  }
+  flow: {
+    style: {stroke: "#667085"; stroke-width: 2; font-size: 13; font-color: "#475467"}
+  }
+}
+
+openai: "OpenAI API\ntext-embedding-3-small" {class: openai}
+
+client: "Client · notebook or any app with the API key" {
+  class: group
+  chain: "RAG chain\nbuild_rag_chain(retriever)" {class: step}
+  lc: "LangChain\nPineconeVectorStore" {class: step}
+  chain -> lc: "question" {class: flow}
+}
+
+pinecone: "Pinecone · serverless · AWS us-east-1" {
+  class: group
+  index: "Index aygo-rag-wikipedia\n1536-d · cosine\nnamespace \"wikipedia\"" {class: store}
+  record: "Vector record (215 stored)" {
+    shape: sql_table
+    style: {fill: "#4f46e5"; stroke: "#ffffff"; font-size: 14}
+    id: "sha1(url#start_index)"
+    values: "float[1536]"
+    "metadata.text": "chunk text"
+    "metadata.title": "article title"
+    "metadata.source": "Wikipedia URL"
+    "metadata.start_index": "position (float)"
+  }
+  index -> record: {style: {stroke: "#4f46e5"; stroke-dash: 4}}
+}
+
+openai <-> client.lc: "text → vector" {class: flow}
+client.lc <-> pinecone.index: "→ upsert · delete stale ids · query(top_k=4, filter)\n← ids + scores + metadata" {class: flow}
